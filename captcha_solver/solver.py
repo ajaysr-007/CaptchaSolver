@@ -240,6 +240,10 @@ class CaptchaSolver:
         char_min_area: int = 400,
         char_min_height: int = 30,
         ocr_mode: str = "per_char",
+        line_removal_method: str = "morphology",
+        morph_erode_kernel: tuple = (3, 2),
+        morph_dilate_kernel: tuple = (3, 2),
+        post_noise_min_area: int = 30,
     ):
         self.threshold_method = threshold_method
         self.noise_min_area = noise_min_area
@@ -252,6 +256,10 @@ class CaptchaSolver:
         self.char_min_area = char_min_area
         self.char_min_height = char_min_height
         self.ocr_mode = ocr_mode
+        self.line_removal_method = line_removal_method
+        self.morph_erode_kernel = morph_erode_kernel
+        self.morph_dilate_kernel = morph_dilate_kernel
+        self.post_noise_min_area = post_noise_min_area
 
     def step_load(self, source) -> np.ndarray:
         return load_and_normalise(source)
@@ -274,6 +282,15 @@ class CaptchaSolver:
     def step_morph(self, bw: np.ndarray) -> np.ndarray:
         return morphological_cleanup(bw)
 
+    def step_morph_line_removal(self, bw: np.ndarray) -> np.ndarray:
+        inv = _cv2.bitwise_not(bw)
+        kernel_erode = _cv2.getStructuringElement(_cv2.MORPH_RECT, self.morph_erode_kernel)
+        eroded = _cv2.erode(inv, kernel_erode, iterations=1)
+        kernel_dilate = _cv2.getStructuringElement(_cv2.MORPH_ELLIPSE, self.morph_dilate_kernel)
+        dilated = _cv2.dilate(eroded, kernel_dilate, iterations=1)
+        bw_post = _cv2.bitwise_not(dilated)
+        return remove_noise_blobs(bw_post, min_area=self.post_noise_min_area, min_height=5)
+
     def step_upscale(self, bw: np.ndarray) -> np.ndarray:
         return upscale(bw, self.upscale_factor)
 
@@ -288,8 +305,15 @@ class CaptchaSolver:
         gray = self.step_load(source)
         bw = self.step_binarise(gray)
         bw = self.step_remove_noise(bw)
-        bw = self.step_remove_lines(bw)
-        bw = self.step_morph(bw)
+        
+        if self.line_removal_method == "hough":
+            bw = self.step_remove_lines(bw)
+            bw = self.step_morph(bw)
+        elif self.line_removal_method == "morphology":
+            bw = self.step_morph_line_removal(bw)
+        else:
+            bw = self.step_morph(bw)
+            
         bw_up = self.step_upscale(bw)
         boxes = self.step_segment(bw_up)
 
@@ -301,14 +325,25 @@ class CaptchaSolver:
 
         result_per = ocr_per_character(bw_up, boxes)
         result_full = ocr_full_image(bw_up)
+        if len(boxes) < 3:
+            return result_full
         return result_per if len(result_per) >= len(result_full) else result_full
 
     def debug_steps(self, source) -> dict:
         gray = self.step_load(source)
         bw = self.step_binarise(gray)
         bw_nb = self.step_remove_noise(bw)
-        bw_nl = self.step_remove_lines(bw_nb)
-        bw_m = self.step_morph(bw_nl)
+        
+        if self.line_removal_method == "hough":
+            bw_nl = self.step_remove_lines(bw_nb)
+            bw_m = self.step_morph(bw_nl)
+        elif self.line_removal_method == "morphology":
+            bw_m = self.step_morph_line_removal(bw_nb)
+            bw_nl = bw_m
+        else:
+            bw_m = self.step_morph(bw_nb)
+            bw_nl = bw_m
+            
         bw_up = self.step_upscale(bw_m)
         boxes = self.step_segment(bw_up)
         text = ocr_per_character(bw_up, boxes) if self.ocr_mode == "per_char" else ocr_full_image(bw_up)
