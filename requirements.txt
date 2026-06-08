@@ -1,0 +1,7 @@
+numpy
+pytesseract
+Pillow
+opencv-python
+azure-functions
+python-dotenv
+pytest

@@ -1,0 +1,22 @@
+# Virtual environment
+.venv/
+venv/
+ENV/
+
+# Python cache
+**/__pycache__/
+*.py[cod]
+*$py.class
+
+# Pytest
+.pytest_cache/
+
+# Local settings / environment variables
+.env
+local.settings.json
+
+# VS Code settings
+.vscode/
+
+# User images/scratch files
+meri_image.png
