@@ -5,3 +5,4 @@ opencv-python
 azure-functions
 python-dotenv
 pytest
+openpyxl
